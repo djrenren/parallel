@@ -85,7 +85,7 @@ class Object{
 		Object(Vector* loc, Color* rgb){
 			this->rgb = rgb; this->loc = loc;
 		}
-		Color* getColor(Vector*){
+		virtual Color* getColor(Vector*){
 			return rgb;
 		}
 		virtual double getCollision(Vector*, Vector*) = 0;
@@ -142,7 +142,7 @@ class Floor: public Object{
 };
 
 Color* Floor::getColor(Vector* coord){
-	if((int)(coord->x/0.008) % 2 == 1 )
+	if((int)((coord->x+100)/0.5) % 2 != (int)((coord->z+100)/0.5) % 2 )
 		return rgb;
 	return rgb2;
 }
@@ -186,7 +186,7 @@ void Screen::render(int px, int py, Vector* eye, Vector* light, Object** objects
 	int closei = 0;
 	int numshadow = 0;
 	printf("P3\n%i %i\n255\n",px,py);
-	#pragma omp parallel for private(minb,closei,closeObj)
+	//#pragma omp parallel for private(minb,closei,closeObj)
 	for(int r=0; r<py; r++)
 		for(int c=0; c<px; c++){
 			minb = inf;
@@ -253,15 +253,16 @@ int main(int argc, char** argv) {
 	Color* red = new Color(255,0,0);
 	Color* blue = new Color(0,0,255);
 	Color* green = new Color(0,255,0); 
-	Color* brown = new Color(139,119,101);
+	Color* brown = new Color(184,134,11);
+	Color* indigo = new Color(75, 0, 130);
 	Sphere* s1 = new Sphere(new Vector(0.5,0.166667,0.666667),0.166667,red);
 	Sphere* s2 = new Sphere(new Vector(0.833333,0.866667,1.0),0.166667,blue);
 	Sphere* s3 = new Sphere(new Vector(0.333333,0.333333,1.166667),0.333333,green);
-	Floor* f = new Floor(0,brown,green);
+	Floor* f = new Floor(0,brown,indigo);
 	Object** obs = (Object**)malloc(4*sizeof(Object*));
 	obs[0] = s1;
 	obs[1] = s2;
 	obs[2] = s3;
 	obs[3] = f;
-	screen->render(1500,1000,eye,light,obs,4);
+	screen->render(900,600,eye,light,obs,4);
 }
