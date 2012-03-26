@@ -78,12 +78,15 @@ class Object{
 		Vector* loc;
 		Color* rgb;
 	public:
+		double reflectivity;
 		Object(){
 			this->rgb = new Color();
 			this->loc = new Vector();
+			this->reflectivity = 0;
 		}
-		Object(Vector* loc, Color* rgb){
+		Object(Vector* loc, Color* rgb, double ref){
 			this->rgb = rgb; this->loc = loc;
+			this->reflectivity = ref;
 		}
 		virtual Color* getColor(Vector*){
 			return rgb;
@@ -98,8 +101,8 @@ class Object{
 class Sphere: public Object{
 	double r;
 	public:
-		Sphere(Vector* loc, double r, Color* col)
-		:Object(loc,col){
+		Sphere(Vector* loc, double r, Color* col, double ref)
+		:Object(loc,col,ref){
 			this->r = r;
 		}
 		double getCollision(Vector*, Vector*);
@@ -131,10 +134,11 @@ class Floor: public Object{
 	private:
 		Color* rgb2;
 	public:
-		Floor(double y,Color* col, Color* col2){
+		Floor(double y,Color* col, Color* col2, double ref){
 			this->loc = new Vector(0,y,0);
 			this->rgb = col;
 			this->rgb2 = col2;
+			this->reflectivity = ref;
 		};
 		double getCollision(Vector*, Vector*);
 		Vector* getNormal(Vector*);
@@ -142,7 +146,7 @@ class Floor: public Object{
 };
 
 Color* Floor::getColor(Vector* coord){
-	if((int)((coord->x+100)/0.5) % 2 != (int)((coord->z+100)/0.5) % 2 )
+	if((int)fabs(ceil(coord->x/0.5))%2 != (int)fabs(floor(coord->z/0.5))%2 )
 		return rgb;
 	return rgb2;
 }
@@ -167,6 +171,7 @@ class Screen{
 	public:
 		Screen(double,double,double, Color*);
 		void render(int,int,Vector*, Vector*, Object**, int);
+		Color* castRay(Vector*, Vector*, Vector*, Object**, int, int);
 		double getShadow(Vector*, Vector*, int,Object**, int);
 };
 
@@ -177,56 +182,61 @@ Screen::Screen(double z, double w, double h, Color* bg){
 	this->bg = bg;
 }
 
+Color* Screen::castRay(Vector* origin, Vector* dir, Vector* light, Object** objects, int numObj, int depth){
+	double minb = inf;
+	Object* closeObj = objects[0];
+	int closei = 0;
+	for(int o=0;o<numObj;o++){
+		double b = objects[o]->getCollision(origin,dir);
+		//cout << b << "\n";
+		if(b > 0.001 && b < minb){
+			minb = b;
+			closeObj = objects[o];
+			closei = o;
+		}
+	}
+	//cout << minb << "\n";
+	if(minb < inf){
+		*dir*=minb;
+		*dir+=*origin;
+		Color* outCol = new Color();
+		*outCol += *(closeObj->getColor(dir))*0.4;
+		Vector* lv = new Vector(dir,light);
+		double ldist = lv->getMagnitude();
+		lv->normalize();
+		Vector* normal = closeObj->getNormal(dir);
+		double dot = normal->dot(lv);
+		if(dot > 0 && ldist - getShadow(dir,lv,closei,objects,numObj) > 0){
+			*outCol += *(closeObj->getColor(dir))*0.6*dot;
+		}
+		if(depth > 0 && closeObj->reflectivity > 0){
+			origin = new Vector(new Vector(),dir);
+			dir->normalize();
+			*outCol = *outCol*(1-closeObj->reflectivity);
+			*outCol += *(castRay(origin, (*dir -= (*normal *= dir->dot(normal)*2)).normalize(), light, objects, numObj, depth--))*closeObj->reflectivity;
+		}
+		return outCol;
+	}
+	return bg;
+	
+
+}
+
 void Screen::render(int px, int py, Vector* eye, Vector* light, Object** objects, int numObj){
 	Color* imgOut[py][px];
 	double pix = width/px;
 	double piy = height/py;
-	double minb;
-	Object* closeObj = objects[0];
-	int closei = 0;
+	
 	int numshadow = 0;
 	printf("P3\n%i %i\n255\n",px,py);
-	//#pragma omp parallel for private(minb,closei,closeObj)
+	#pragma omp parallel for
 	for(int r=0; r<py; r++)
 		for(int c=0; c<px; c++){
-			minb = inf;
-			closei = 0;
-			Vector* v = (new Vector(pix*c-eye->x, 
+			Vector* dir = (new Vector(pix*c-eye->x, 
 								height-piy*r-eye->y, 
 								zindex-eye->z))->normalize();
-			for(int o=0;o<numObj;o++){
-				double b = objects[o]->getCollision(eye,v);
-				if(b > 0 && b < minb){
-					minb = b;
-					closeObj = objects[o];
-					closei = o;
-				}
-			}
-			if(minb < inf){
-				//cout << minb << "\n";
-				//v->print();
-				//cout << " * " << minb << " = ";
-				*v*=minb;
-				*v+=*eye;
-				//v->print();
-				//cout << "\n";
-				Color* outCol = new Color();
-				*outCol += *(closeObj->getColor(v))*0.4;
-				Vector* lv = new Vector(v,light);
-				double ldist = lv->getMagnitude();
-				lv->normalize();
-				//v->print();
-				//cout << "---";
-				//lv->print();
-				double dot = closeObj->getNormal(v)->dot(lv);
-				if(dot > 0 && ldist - getShadow(v,lv,closei,objects,numObj) > 0){
-					*outCol += *(closeObj->getColor(v))*0.6*dot;
-				}
-
-				imgOut[r][c] = outCol;
-			}
-			else
-				imgOut[r][c] = bg;
+			imgOut[r][c] = castRay(eye,dir, light, objects, numObj,1);
+			//delete dir;
 		}
 	for(int r=0; r<py; r++)
 		for(int c=0; c<px; c++){
@@ -255,10 +265,10 @@ int main(int argc, char** argv) {
 	Color* green = new Color(0,255,0); 
 	Color* brown = new Color(184,134,11);
 	Color* indigo = new Color(75, 0, 130);
-	Sphere* s1 = new Sphere(new Vector(0.5,0.166667,0.666667),0.166667,red);
-	Sphere* s2 = new Sphere(new Vector(0.833333,0.866667,1.0),0.166667,blue);
-	Sphere* s3 = new Sphere(new Vector(0.333333,0.333333,1.166667),0.333333,green);
-	Floor* f = new Floor(0,brown,indigo);
+	Sphere* s1 = new Sphere(new Vector(0.5,0.166667,0.666667),0.166667,red,0.1);
+	Sphere* s2 = new Sphere(new Vector(0.833333,0.866667,1.0),0.166667,blue,0);
+	Sphere* s3 = new Sphere(new Vector(0.633333,0.333333,1.166667),0.333333,green,0.2);
+	Floor* f = new Floor(0,brown,indigo,0.3);
 	Object** obs = (Object**)malloc(4*sizeof(Object*));
 	obs[0] = s1;
 	obs[1] = s2;
