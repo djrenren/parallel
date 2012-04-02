@@ -71,13 +71,18 @@ class Color{
 		void print(){
 			printf("%d %d %d",r,g,b);
 		}
+		char* toString(){
+            char* mystr = malloc(11);
+			sprintf(mystr,"%d %d %d",r,g,b);
+            return mystr;
+		}
 };
 
 class Object{
 	protected:
-		Vector* loc;
 		Color* rgb;
 	public:
+	    Vector* loc;
 		double reflectivity;
 		Object(){
 			this->rgb = new Color();
@@ -170,7 +175,7 @@ class Screen{
 		Color* bg;
 	public:
 		Screen(double,double,double, Color*);
-		void render(int,int,Vector*, Vector*, Object**, int);
+		void render(char*,int,int,Vector*, Vector*, Object**, int);
 		Color* castRay(Vector*, Vector*, Vector*, Object**, int, int);
 		double getShadow(Vector*, Vector*, int,Object**, int);
 };
@@ -222,7 +227,7 @@ Color* Screen::castRay(Vector* origin, Vector* dir, Vector* light, Object** obje
 
 }
 
-void Screen::render(int px, int py, Vector* eye, Vector* light, Object** objects, int numObj){
+void Screen::render(char* fn, int px, int py, Vector* eye, Vector* light, Object** objects, int numObj){
 	Color* imgOut[py][px];
 	double pix = width/px;
 	double piy = height/py;
@@ -238,10 +243,10 @@ void Screen::render(int px, int py, Vector* eye, Vector* light, Object** objects
 			imgOut[r][c] = castRay(eye,dir, light, objects, numObj,1);
 			//delete dir;
 		}
+    ofstream out(fn);
 	for(int r=0; r<py; r++)
 		for(int c=0; c<px; c++){
-			imgOut[r][c]->print();
-			cout << ' ';
+			out << imgOut[r][c]->toString() << ' ';
 		}
 }
 double Screen::getShadow(Vector* sv, Vector* lv, int close, Object** obs, int numObj){
@@ -274,5 +279,6 @@ int main(int argc, char** argv) {
 	obs[1] = s2;
 	obs[2] = s3;
 	obs[3] = f;
-	screen->render(900,600,eye,light,obs,4);
+	screen->render(900,600,eye,light,obs,4,'myfile.ppm');
+	
 }
