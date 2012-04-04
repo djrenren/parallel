@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fstream>
 #include <stdio.h>
 #include <math.h>
 #include <limits>
@@ -11,6 +12,9 @@ class Vector{
 		Vector(){z=0;y=0;z=0;}
 		Vector(double ix, double iy, double iz){
 			x = ix; y = iy; z = iz;
+		}
+		Vector(Vector* v){
+			x = v->x; y = v->y; z = v->z;
 		}
 		Vector(Vector* v1, Vector* v2){
 			x = v2->x - v1->x;
@@ -39,6 +43,9 @@ class Vector{
 		Vector operator-=(const Vector& v){
 			x-= v.x; y-= v.y; z-= v.z;
 			return *this;
+		}
+		Vector operator*(double scalar){
+            return *(new Vector(this))*=scalar;
 		}
 		void print(){
 			printf("(%f, %f, %f)",x,y,z);
@@ -72,7 +79,7 @@ class Color{
 			printf("%d %d %d",r,g,b);
 		}
 		char* toString(){
-            char* mystr = malloc(11);
+            char* mystr = (char*)malloc(11);
 			sprintf(mystr,"%d %d %d",r,g,b);
             return mystr;
 		}
@@ -129,6 +136,8 @@ double Sphere::getCollision(Vector* eye, Vector* ray){
 		return inf;
 	double pos = (-b+sqrt(det))/2;
 	double neg = (-b-sqrt(det))/2;
+	if(pos < 0 || neg < 0)
+        return inf;
 	return pos > neg ? neg : pos;
 }
 
@@ -151,7 +160,7 @@ class Floor: public Object{
 };
 
 Color* Floor::getColor(Vector* coord){
-	if((int)fabs(ceil(coord->x/0.5))%2 != (int)fabs(floor(coord->z/0.5))%2 )
+	if((int)fabs(ceil(coord->x/0.25))%2 != (int)fabs(floor(coord->z/0.25))%2 )
 		return rgb;
 	return rgb2;
 }
@@ -194,7 +203,7 @@ Color* Screen::castRay(Vector* origin, Vector* dir, Vector* light, Object** obje
 	for(int o=0;o<numObj;o++){
 		double b = objects[o]->getCollision(origin,dir);
 		//cout << b << "\n";
-		if(b > 0.001 && b < minb){
+		if(b < minb){
 			minb = b;
 			closeObj = objects[o];
 			closei = o;
@@ -202,24 +211,26 @@ Color* Screen::castRay(Vector* origin, Vector* dir, Vector* light, Object** obje
 	}
 	//cout << minb << "\n";
 	if(minb < inf){
-		*dir*=minb;
-		*dir+=*origin;
+        Vector* coll = new Vector(dir->x*minb, dir->y*minb, dir->z*minb);
+        *coll += *origin;
+        
 		Color* outCol = new Color();
-		*outCol += *(closeObj->getColor(dir))*0.4;
-		Vector* lv = new Vector(dir,light);
-		double ldist = lv->getMagnitude();
-		lv->normalize();
-		Vector* normal = closeObj->getNormal(dir);
-		double dot = normal->dot(lv);
-		if(dot > 0 && ldist - getShadow(dir,lv,closei,objects,numObj) > 0){
-			*outCol += *(closeObj->getColor(dir))*0.6*dot;
-		}
+		*outCol += *(closeObj->getColor(coll))*0.4;
+				
+		*outCol += *(closeObj->getColor(coll))*0.6*getShadow(coll, light, closei,objects,numObj);
 		if(depth > 0 && closeObj->reflectivity > 0){
-			origin = new Vector(new Vector(),dir);
-			dir->normalize();
+		    Vector* lv = (new Vector(coll, light))->normalize();
+            *lv *= -1;
+            Vector* normal = closeObj->getNormal(coll);
+            *normal *= 2*normal->dot(lv);
+            
+            *lv += *normal;
 			*outCol = *outCol*(1-closeObj->reflectivity);
-			*outCol += *(castRay(origin, (*dir -= (*normal *= dir->dot(normal)*2)).normalize(), light, objects, numObj, depth--))*closeObj->reflectivity;
+			*outCol += *(castRay(origin, lv, light, objects, numObj, depth--))*closeObj->reflectivity;
+            delete lv;
+            delete normal;
 		}
+        delete coll;
 		return outCol;
 	}
 	return bg;
@@ -232,9 +243,7 @@ void Screen::render(char* fn, int px, int py, Vector* eye, Vector* light, Object
 	double pix = width/px;
 	double piy = height/py;
 	
-	int numshadow = 0;
-	printf("P3\n%i %i\n255\n",px,py);
-	#pragma omp parallel for
+//	#pragma omp parallel for
 	for(int r=0; r<py; r++)
 		for(int c=0; c<px; c++){
 			Vector* dir = (new Vector(pix*c-eye->x, 
@@ -244,41 +253,53 @@ void Screen::render(char* fn, int px, int py, Vector* eye, Vector* light, Object
 			//delete dir;
 		}
     ofstream out(fn);
+    out << "P3\n" << px << " " << py << "\n255\n";
 	for(int r=0; r<py; r++)
 		for(int c=0; c<px; c++){
 			out << imgOut[r][c]->toString() << ' ';
 		}
 }
-double Screen::getShadow(Vector* sv, Vector* lv, int close, Object** obs, int numObj){
-
+double Screen::getShadow(Vector* coll, Vector* light, int close, Object** obs, int numObj){
+    double col;
+    Vector* lv = new Vector(coll, light);
+    double ldist = lv->getMagnitude();
+    Vector* normal = obs[close]->getNormal(coll);
+	double dot = normal->dot(lv);
+	if(dot < 0)
+        return 0;
+    lv->normalize();
 	for(int i=0; i < numObj; i++){
-	double col = obs[i]->getCollision(sv,lv);
-		if(col > 0 && col < inf){
-			return inf;
+	    if(i == close)
+            continue;
+	    col = obs[i]->getCollision(coll,lv);
+		if(col < ldist){
+			return 0;
 		}
 	}
-	return 0;
+    delete lv;
+    delete normal;
+	return dot;
 }
 
 int main(int argc, char** argv) {
 	inf = numeric_limits<double>::infinity();
 	Vector* eye = new Vector(0.5,0.5,-1);
-	Vector* light = new Vector(0,1.0,0.5);
+	Vector* light = new Vector(0,1.0,-0.5);
 	Screen* screen = new Screen(0.0,1.5,1.0, new Color(0,0,0));
 	Color* red = new Color(255,0,0);
 	Color* blue = new Color(0,0,255);
 	Color* green = new Color(0,255,0); 
 	Color* brown = new Color(184,134,11);
 	Color* indigo = new Color(75, 0, 130);
-	Sphere* s1 = new Sphere(new Vector(0.5,0.166667,0.666667),0.166667,red,0.1);
-	Sphere* s2 = new Sphere(new Vector(0.833333,0.866667,1.0),0.166667,blue,0);
-	Sphere* s3 = new Sphere(new Vector(0.633333,0.333333,1.166667),0.333333,green,0.2);
-	Floor* f = new Floor(0,brown,indigo,0.3);
+	Sphere* s1 = new Sphere(new Vector(0.333333,0.666667,0.666667),0.333333,red,0);
+	Sphere* s2 = new Sphere(new Vector(0.5,0.5,0.166667),0.166667,blue,0);
+	Sphere* s3 = new Sphere(new Vector(0.833333,0.5,0.5),0.166667,green,0);
+	Floor* f = new Floor(0.333333,brown,indigo,0.2);
 	Object** obs = (Object**)malloc(4*sizeof(Object*));
 	obs[0] = s1;
 	obs[1] = s2;
 	obs[2] = s3;
 	obs[3] = f;
-	screen->render(900,600,eye,light,obs,4,'myfile.ppm');
+	screen->render("myfile.ppm",450,300,eye,light,obs,4);
 	
 }
