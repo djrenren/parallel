@@ -53,9 +53,8 @@ class Vector{
 };
 
 class Color{
-	private:
-		int r,g,b;
 	public:
+	    int r,g,b;
 		Color(){r=0;g=0;b=0;}
 		Color(Color* c){
 			r=c->r; g=c->g; b=c->b;
@@ -256,7 +255,7 @@ void Screen::render(char* fn, int px, int py, Vector* eye, Vector* light, Object
     out << "P3\n" << px << " " << py << "\n255\n";
 	for(int r=0; r<py; r++)
 		for(int c=0; c<px; c++){
-			out << imgOut[r][c]->toString() << ' ';
+			out << imgOut[r][c]->r << ' ' << imgOut[r][c]->g << ' ' << imgOut[r][c]->b << ' ';
 		}
 }
 double Screen::getShadow(Vector* coll, Vector* light, int close, Object** obs, int numObj){
