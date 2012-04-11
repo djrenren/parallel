@@ -74,6 +74,10 @@ class Color{
 		Color operator*(const double s){
 			return *(new Color(r*s,g*s,b*s));
 		}
+		Color operator*=(const double s){
+            r*=s; g*=s; b*=s;
+            return *this;
+		}
 		void print(){
 			printf("%d %d %d",r,g,b);
 		}
@@ -214,21 +218,23 @@ Color* Screen::castRay(Vector* origin, Vector* dir, Vector* light, Object** obje
         *coll += *origin;
         
 		Color* outCol = new Color();
-		*outCol += *(closeObj->getColor(coll))*0.4;
+		*outCol += *(closeObj->getColor(coll));
 				
-		*outCol += *(closeObj->getColor(coll))*0.6*getShadow(coll, light, closei,objects,numObj);
-		if(depth > 0 && closeObj->reflectivity > 0){
+        if(depth > 0 && closeObj->reflectivity > 0){
 		    Vector* lv = (new Vector(coll, light))->normalize();
-            *lv *= -1;
             Vector* normal = closeObj->getNormal(coll);
             *normal *= 2*normal->dot(lv);
-            
+            *lv *= -1;
             *lv += *normal;
 			*outCol = *outCol*(1-closeObj->reflectivity);
-			*outCol += *(castRay(origin, lv, light, objects, numObj, depth--))*closeObj->reflectivity;
+			*outCol += *(castRay(coll, lv, light, objects, numObj, --depth))*closeObj->reflectivity;
             delete lv;
             delete normal;
 		}
+		*outCol *= 0.4;
+        
+		*outCol += *(closeObj->getColor(coll))*0.6*getShadow(coll, light, closei,objects,numObj);
+		
         delete coll;
 		return outCol;
 	}
@@ -248,7 +254,7 @@ void Screen::render(char* fn, int px, int py, Vector* eye, Vector* light, Object
 			Vector* dir = (new Vector(pix*c-eye->x, 
 								height-piy*r-eye->y, 
 								zindex-eye->z))->normalize();
-			imgOut[r][c] = castRay(eye,dir, light, objects, numObj,1);
+			imgOut[r][c] = castRay(eye,dir, light, objects, numObj,2);
 			//delete dir;
 		}
     ofstream out(fn);
@@ -290,15 +296,15 @@ int main(int argc, char** argv) {
 	Color* green = new Color(0,255,0); 
 	Color* brown = new Color(184,134,11);
 	Color* indigo = new Color(75, 0, 130);
-	Sphere* s1 = new Sphere(new Vector(0.333333,0.666667,0.666667),0.333333,red,0);
-	Sphere* s2 = new Sphere(new Vector(0.5,0.5,0.166667),0.166667,blue,0);
-	Sphere* s3 = new Sphere(new Vector(0.833333,0.5,0.5),0.166667,green,0);
-	Floor* f = new Floor(0.333333,brown,indigo,0.2);
+	Sphere* s1 = new Sphere(new Vector(0.333333,0.666667,0.666667),0.333333,red,0.6);
+	Sphere* s2 = new Sphere(new Vector(0.5,0.5,0.166667),0.166667,blue,0.8);
+	Sphere* s3 = new Sphere(new Vector(1.1/*0.833333*/,1.0,0.5),0.166667,green,0.4);
+	Floor* f = new Floor(0.333333,brown,indigo,0.1);
 	Object** obs = (Object**)malloc(4*sizeof(Object*));
 	obs[0] = s1;
 	obs[1] = s2;
 	obs[2] = s3;
 	obs[3] = f;
-	screen->render("myfile.ppm",450,300,eye,light,obs,4);
+	screen->render("myfile.ppm",900,600,eye,light,obs,4);
 	
 }
